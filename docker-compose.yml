@@ -1,0 +1,63 @@
+# Docker Compose deploy: OpenClaw + AlphaClaw + GBrain (PGLite engine)
+#
+# Equivalente self-hosted del render.yaml original. Diseñado para Dokploy
+# (que provisiona Traefik automáticamente), pero funciona en cualquier
+# host con Docker + Traefik si defines la red externa "traefik-public"
+# (o la que ya use tu instancia de Traefik) y descomentas las labels.
+
+services:
+  openclaw-gbrain:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        GBRAIN_REF: 5008b287e47bf791132eedfebf66bdef11e9398c
+    restart: unless-stopped
+    ports:
+      - "10000:10000"
+    volumes:
+      - alphaclaw-data:/data
+    environment:
+      # --- AlphaClaw / OpenClaw ---
+      - ALPHACLAW_ROOT_DIR=/data
+      - PORT=10000
+      # Generar manualmente, p.ej.: openssl rand -hex 32
+      - SETUP_PASSWORD=${SETUP_PASSWORD}
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
+      # --- GBrain / OpenClaw model access ---
+      # Una sola clave cubre embeddings, query expansion y el agente
+      # OpenClaw en sí.
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      # Opcional: solo necesaria si quieres las features de subagente de
+      # GBrain (takes extract, autopilot dream-cycle), que exigen
+      # Anthropic-directo y rechazan las llamadas ruteadas por OpenRouter.
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # --- GBrain runtime config ---
+      # GBRAIN_HOME es tratado como directorio PADRE por gbrain: agrega
+      # '.gbrain' él mismo -> configDir = /data/.gbrain
+      # (brain en /data/.gbrain/brain.pglite, config en
+      # /data/.gbrain/config.json). Ambos persisten vía el volumen.
+      - GBRAIN_HOME=/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:10000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    # --- Traefik labels (solo si NO usas la configuración de dominio del
+    #     panel de Dokploy y quieres declarar el enrutamiento aquí mismo) ---
+    # labels:
+    #   - "traefik.enable=true"
+    #   - "traefik.http.routers.openclaw-gbrain.rule=Host(`openclaw.tudominio.com`)"
+    #   - "traefik.http.routers.openclaw-gbrain.entrypoints=websecure"
+    #   - "traefik.http.routers.openclaw-gbrain.tls.certresolver=letsencrypt"
+    #   - "traefik.http.services.openclaw-gbrain.loadbalancer.server.port=10000"
+    # networks:
+    #   - traefik-public
+
+volumes:
+  alphaclaw-data:
+
+# networks:
+#   traefik-public:
+#     external: true
